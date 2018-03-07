@@ -25,7 +25,6 @@ ui <- fluidPage(
                                     "Diluted Shares Outstanding" = "diluted_shares_outstanding",
                                     "Net Income" = "net_income",
                                     "Dividends" = "dividends")),
-            # uiOutput(outputId = "select_fin_data"),
             numericInput(inputId = "price",
                          label = "Current Price:", value = NA, min = 0),
             numericInput(inputId = "growth_years",
@@ -203,7 +202,6 @@ server <- function(input, output, session) {
     })
     output$data_table <- renderTable({
         req(financials())
-        # date <- format(dates(), "%Y-%m-%d")
         date <- format(financials()$date, "%Y-%m-%d")
         df <- cbind(date, cbind(financials()[[input$financial_data]], pct_change()))
         if (input$financial_data %in% percent_data) {
