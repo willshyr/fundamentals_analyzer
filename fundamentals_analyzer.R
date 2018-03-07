@@ -139,8 +139,17 @@ server <- function(input, output, session) {
     })
     pct_change <- reactive({
         req(financials())
-        fin <- financials()[[input$financial_data]]
-        round(c(0, diff(fin)) / lag(fin) * 100, 2)
+        financial_data <- financials()[[input$financial_data]]
+        if (TRUE %in% (financial_data < 0)) {
+            pct_change <- rep(NA, length(financial_data))
+            for (i in 1:(length(financial_data) - 1)) {
+                if (financial_data[i] < 0 | financial_data[i+1] < 0) {next()}
+                pct_change[i+1] <- financial_data[i+1]/financial_data[i] - 1
+            }
+            return(round(pct_change*100, 2))
+        }
+        pct_change <- round(c(0, diff(financial_data)) / lag(financial_data)* 100, 2)
+        pct_change
     })
     avg_yoy_growth <- reactive({
         req(financials())
@@ -236,7 +245,6 @@ server <- function(input, output, session) {
         }
     )
     plot_financial <- function(financials, financial_data, color, ylabel, font_size, plot_title, labels = waiver()) {
-        print(class(financials$date))
         ggplot(financials, aes_string(x="date", y=financial_data)) + 
             geom_point(color = color, size = 4) +
             geom_line(color = color) +
