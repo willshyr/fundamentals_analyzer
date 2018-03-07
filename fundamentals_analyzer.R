@@ -20,10 +20,6 @@ ui <- fluidPage(
             textInput(inputId = "title",
                       label = "Title:",
                       placeholder = ""),
-            # selectInput(inputId = "plot_type",
-            #             label = "Plot Type",
-            #             choices = c("Line Plot" = "line",
-            #                         "Bar Plot" = "bar")),
             selectInput(inputId = "financial_data",
                         label = "Financial data:",
                         choices = c("Revenue" = "revenue",
@@ -241,16 +237,6 @@ server <- function(input, output, session) {
     )
     plot_financial <- function(financials, financial_data, color, ylabel, font_size, plot_title, labels = waiver()) {
         print(class(financials$date))
-        # if (input$plot_type == "bar") {
-        #     ggplot(financials, aes_string(x="date", y=financial_data)) + 
-        #         geom_bar(color = color, fill = color, stat = "identity", width = 0.5)
-        #         ggtitle(plot_title) +
-        #         ylab(ylabel) + 
-        #         xlab("Date") +
-        #         theme(text=element_text(size = font_size)) + 
-        #         scale_y_continuous(labels = labels)
-        # } else {
-        #     financials$date <- as.Date(financials$date, input$date_format)
         ggplot(financials, aes_string(x="date", y=financial_data)) + 
             geom_point(color = color, size = 4) +
             geom_line(color = color) +
