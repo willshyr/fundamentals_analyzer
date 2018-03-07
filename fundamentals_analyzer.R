@@ -8,16 +8,23 @@ med <- 22
 ui <- fluidPage(
     sidebarLayout(
         sidebarPanel(
-            fileInput("file1", "Choose CSV File",
-                      accept = c(
-                          "text/csv",
-                          "text/comma-separated-values,text/plain",
-                          ".csv")
-            ),
-            textInput(inputId = "ticker",
-                      label = "Ticker:",
+            fileInput(inputId = "file1", label = "Choose CSV File",
+                      accept = c("text/csv",
+                                 "text/comma-separated-values,text/plain",
+                                 ".csv")),
+            selectInput(inputId = "date_format",
+                        label = "File Date Format:",
+                        choices = c("mm/dd/yy" = "%m/%d/%y",
+                                    "yyyy-mm-dd" = "%Y-%m-%d",
+                                    "yyyy/mm/dd" = "%Y/%m/%d")),
+            textInput(inputId = "title",
+                      label = "Title:",
                       placeholder = ""),
-            radioButtons(inputId = "financial_data",
+            # selectInput(inputId = "plot_type",
+            #             label = "Plot Type",
+            #             choices = c("Line Plot" = "line",
+            #                         "Bar Plot" = "bar")),
+            selectInput(inputId = "financial_data",
                         label = "Financial data:",
                         choices = c("Revenue" = "revenue",
                                     "Free Cash Flow" = "free_cash_flow",
@@ -25,7 +32,6 @@ ui <- fluidPage(
                                     "Diluted Shares Outstanding" = "diluted_shares_outstanding",
                                     "Net Income" = "net_income",
                                     "Dividends" = "dividends")),
-            # uiOutput(outputId = "select_fin_data"),
             numericInput(inputId = "price",
                          label = "Current Price:", value = NA, min = 0),
             numericInput(inputId = "growth_years",
@@ -40,32 +46,19 @@ ui <- fluidPage(
             numericInput(inputId = "discount_rate",
                          label = "Required Rate of Return (%):",
                          value = 10, min = -100, max = 100, step = 0.01),
-            # checkboxInput(inputId = "terminal",
-            #               label = "Terminal Growth",
-            #               value = FALSE),
-            # uiOutput("conditional_input"),
-            # conditionalPanel(
-            #     condition = "input.terminal",
-            #     numericInput(inputId = "terminal_years",
-            #                  label = "Years of Terminal Growth:",
-            #                  value = 3, min = 1, max = 200, step = 1),
-            #     numericInput(inputId = "terminal_rate",
-            #                  label = "Terminal Growth Rate (%):",
-            #                  value = 0, min = -100, max = 100, step = 0.01)
-            # ),
             numericInput(inputId = "terminal_years",
                          label = "Years of Terminal Growth:",
-                         value = 3, min = 1, max = 200, step = 1),
+                         value = 10, min = 1, max = 200, step = 1),
             numericInput(inputId = "terminal_rate",
                          label = "Terminal Growth Rate (%):",
-                         value = 0, min = -100, max = 100, step = 0.01)
+                         value = 0, min = -100, max = 100, step = 0.01),
             numericInput(inputId = "font_size",
                          label = "Font size:",
                          value = med, min = 1, max = 30),
             downloadButton(outputId = "download_plot", label = "Download plot")
         ),
         mainPanel(
-            plotOutput(outputId = "scatterplot_with_lines"),
+            plotOutput(outputId = "plot_financial_data"),
             textOutput(outputId = "growth"),
             tableOutput(outputId = "data_table"),
             tableOutput(outputId = "value")
@@ -84,15 +77,15 @@ server <- function(input, output, session) {
         if (is.null(inFile))
             return(NULL)
         df <- read.csv(inFile$datapath, header = TRUE)
-        df$date <- as.Date(df$date, "%Y-%m-%d")
+        df$date <- as.Date(df$date, input$date_format)
         df$EPS_payout <- round(df$dividends_per_share / df$EPS_diluted * 100, 2)
+        df$operating_margin <- round(df$operating_income / df$revenue * 100, 2)
+        df$net_margin <- round(df$net_income / df$revenue * 100, 2)
+        df$gross_margin <- round(df$gross_profit / df$revenue * 100, 2)
         df
     })
-    get_ticker <- reactive({
-        req(financials())
-        unlist(strsplit(input$file1$name, "_"))[1]
-    })
-    choices <- reactive({
+    special_titles <- c("R_D", "SG_A")
+    get_choices <- reactive({
         req(financials())
         df <- financials()[,2:dim(financials())[2]]
         choices_list <-  as.list(names(df))
@@ -103,7 +96,9 @@ server <- function(input, output, session) {
         names(choices_list) <- choices_names
         choices_list
     })
-    percent_data <- c("EPS_payout", "FCF_payout", "ROA", "ROE", "ROIC")
+    percent_data <- c("EPS_payout", "FCF_payout", 
+                      "operating_margin", "net_margin", "gross_margin",
+                      "ROA", "ROE", "ROIC", "comparable_store_sales")
     units <- reactive({
         req(financials())
         ## Check whether y-axis should be 'Mil USD' or 'Bil USD'
@@ -131,13 +126,20 @@ server <- function(input, output, session) {
     plotInput <- reactive({
         req(financials())
         req(units())
+        # req(get_title())
         color <- "coral3"
         plot_financial(financials =financials(),
                        financial_data = input$financial_data, 
                        color = color, 
                        ylabel = units()$ylabel,
                        font_size = input$font_size,
-                       ticker = input$ticker, labels = units()$formatter)
+                       plot_title = input$title, 
+                       labels = units()$formatter)
+    })
+    get_title <- reactive({
+        req(financials())
+        ticker <- unlist(strsplit(input$file1$name, "_"))[1]
+        x <- paste(ticker, displayString(input$financial_data))
     })
     pct_change <- reactive({
         req(financials())
@@ -151,12 +153,13 @@ server <- function(input, output, session) {
         num_years <- length(selected_data) - 1
         ((selected_data[length(selected_data)] / selected_data[1])^(1/num_years) - 1) * 100
     })
-    output$scatterplot_with_lines <- renderPlot({
+    output$plot_financial_data <- renderPlot({
         print(plotInput())
     })
     equity_value <- reactive({
         req(financials())
         n <- length(financials()$net_income)
+        # print(n)
         earnings_growth <- input$earnings_growth / 100
         book_value_growth <- input$book_value_growth / 100
         discount_rate <- input$discount_rate / 100
@@ -175,7 +178,7 @@ server <- function(input, output, session) {
             }
             book_values[i] <- book_values[i] * (1 + book_value_growth)^i
         }
-        print(eps)
+        # print(eps)
         # Residual earnings
         re <- earnings - (discount_rate * book_values)
         discounted_re <- rep(0, length(re))
@@ -184,17 +187,11 @@ server <- function(input, output, session) {
             discounted_re[i] <- re[i] / (1 + discount_rate)^i
             discounted_eps[i] <- eps[i] / (1 + discount_rate)^i
         }
-        if (input$terminal) {
-            r <- (1 + terminal_rate) / (1 + discount_rate)
-            terminal_discounted_eps <- discounted_eps[length(discounted_eps)] * r*(1 - r^input$terminal_years) / (1 - r)
-            earnings_model <- sum(discounted_eps) + terminal_discounted_eps
-        } else {
-            # discounted_re[length(discounted_re)] <- tail(discounted_re, 1) / discount_rate
-            terminal_discounted_re <- tail(discounted_re, 1) / discount_rate
-            abnormal_earnings_model <- round((book_values[1] + sum(discounted_re)) / financials()$diluted_shares_outstanding[n], 2)
-            discounted_eps[length(discounted_eps)] <- discounted_eps[length(discounted_eps)] / discount_rate
-            earnings_model <- sum(discounted_eps)
-        }
+        r <- (1 + terminal_rate) / (1 + discount_rate)
+        terminal_discounted_eps <- tail(discounted_eps, 1) * r*(1 - r^input$terminal_years) / (1 - r)
+        earnings_model <- sum(discounted_eps) + terminal_discounted_eps
+        terminal_discounted_re <- tail(discounted_re, 1) * r*(1 - r^input$terminal_years) / (1 - r)
+        abnormal_earnings_model <- round((book_values[1] + sum(discounted_re) + terminal_discounted_re) / tail(financials()$diluted_shares_outstanding, 1), 2)
         c(abnormal_earnings_model, earnings_model)
     })
     output$growth <- renderText({
@@ -203,11 +200,13 @@ server <- function(input, output, session) {
     })
     output$data_table <- renderTable({
         req(financials())
-        # date <- format(dates(), "%Y-%m-%d")
-        date <- format(financials()$date, "%Y-%m-%d")
-        df <- cbind(date, cbind(financials()[[input$financial_data]], pct_change()))
+        df <- financials()
+        date <- format(df$date, "%Y-%m-%d")
+        df <- cbind(date, cbind(df[[input$financial_data]], pct_change()))
         if (input$financial_data %in% percent_data) {
             selected_data_title <- paste(displayString(input$financial_data), "(%)")
+        } else if (input$financial_data %in% special_titles) {
+            selected_data_title <- paste(gsub("_", "&", input$financial_data))
         } else {
             selected_data_title <- displayString(input$financial_data)
         }
@@ -240,26 +239,40 @@ server <- function(input, output, session) {
                    device = "pdf")
         }
     )
+    plot_financial <- function(financials, financial_data, color, ylabel, font_size, plot_title, labels = waiver()) {
+        print(class(financials$date))
+        # if (input$plot_type == "bar") {
+        #     ggplot(financials, aes_string(x="date", y=financial_data)) + 
+        #         geom_bar(color = color, fill = color, stat = "identity", width = 0.5)
+        #         ggtitle(plot_title) +
+        #         ylab(ylabel) + 
+        #         xlab("Date") +
+        #         theme(text=element_text(size = font_size)) + 
+        #         scale_y_continuous(labels = labels)
+        # } else {
+        #     financials$date <- as.Date(financials$date, input$date_format)
+        ggplot(financials, aes_string(x="date", y=financial_data)) + 
+            geom_point(color = color, size = 4) +
+            geom_line(color = color) +
+            ggtitle(plot_title) + 
+            ylab(ylabel) + 
+            xlab("Date") +
+            theme(text=element_text(size = font_size)) + 
+            scale_y_continuous(labels = labels)
+        
+    }
+    displayString <- function(x) {
+        if (x %in% special_titles) {
+            return(gsub("_", "&", x))
+        }
+        toTitleCase(gsub("_", " ", x))
+    }
     observe({
-        updateRadioButtons(session, "financial_data", choices = choices())
-        updateTextInput(session, "ticker", value = get_ticker())
+        updateTextInput(session, "title", value = get_title())
     })
-}
-
-displayString <- function(x) {
-    toTitleCase(gsub("_", " ", x))
-}
-
-plot_financial <- function(financials, financial_data, color, ylabel, font_size, ticker = "", labels = waiver()) {
-    plot_title <- paste(ticker, displayString(financial_data))
-    ggplot(financials, aes_string(x="date", y=financial_data)) + 
-        geom_point(color = color, size = 4) + 
-        geom_line(color = color) +
-        ggtitle(plot_title) + 
-        ylab(ylabel) + 
-        xlab("Date") +
-        theme(text=element_text(size = font_size)) + 
-        scale_y_continuous(labels = labels)
+    observe({
+        updateSelectInput(session, "financial_data", choices = get_choices())
+    })
 }
 
 shinyApp(ui, server)
